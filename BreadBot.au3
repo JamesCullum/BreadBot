@@ -229,7 +229,7 @@ Func parseCommand($username, $msg)
 
 	  Case "unready"
 		 $team = getTeam($username)
-		 If $team And StringLen($confirmReady[0]) And  And $confirmReady[$team] = 1 Then
+		 If $team And StringLen($confirmReady[0]) And $confirmReady[$team] = 1 Then
 			If StringLen($activePause[0]) And $activePause[1] = $team And $confirmReady[0] = "unpause" Then
 			   botSay(getTeamName($team) & " kann das Ende der Pause nicht abbrechen")
 			Else
@@ -660,7 +660,14 @@ Func sendRcon($ie, $cmd)
    $input = _IEGetObjById($ie, "inputCommand")
    $input.innerText = $cmd
    $oIE.document.parentwindow.execScript("submitForm();")
-   Sleep(250)
+
+   $timeout = TimerInit()
+   While TimerDiff($timeout) < 3*1000
+	  If Not StringLen($input.innerText) Then
+		 ExitLoop
+	  EndIf
+   WEnd
+
 EndFunc
 
 Func getLog($ie)
