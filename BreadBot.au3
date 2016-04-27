@@ -17,6 +17,7 @@ Global $lastUsedInput, $playerlist = ObjCreate('Scripting.Dictionary'), $confirm
 $Form1 = GUICreate("Signaltransmitter / BFCup - Dashboard", 665, 408)
 $CtrlUser = GUICtrlCreateInput("Benutzername", 8, 8, 150, 21)
 $CtrlPass = GUICtrlCreateInput("Passwort", 165, 8, 158, 21)
+$CtrlServer = GUICtrlCreateCombo("Server wählen...", 336, 8, 185, 21, $CBS_DROPDOWNLIST)
 GUICtrlSetState(-1, $GUI_DISABLE)
 $CtrlConnect = GUICtrlCreateButton("Verbinden", 528, 8, 121, 22)
 $Group1 = GUICtrlCreateGroup("RCON", 8, 40, 313, 281)
@@ -45,6 +46,8 @@ GUISetState(@SW_SHOW)
 
 GUICtrlSetTip($CtrlUser, "Gib deine Signaltransmitter - Benutzerdaten ein")
 GUICtrlSetTip($CtrlPass, "Gib deine Signaltransmitter - Benutzerdaten ein")
+GUICtrlSetTip($CtrlTeamA, "Drücke Enter um beide Namen auf dem Server zu setzen")
+GUICtrlSetTip($CtrlTeamB, "Drücke Enter um beide Namen auf dem Server zu setzen")
 GUICtrlSetTip($CtrlTeamATacCount, "Taktische Pausen")
 GUICtrlSetTip($CtrlTeamBTacCount, "Taktische Pausen")
 GUICtrlSetTip($CtrlTeamATecTimer, "Technische Pausen")
@@ -88,6 +91,7 @@ While 1
 			EndIf
 
 			If Not FileExists($config) Then
+			   $ask = MsgBox(32+4, "Login speichern", "Möchtest du deine Anmeldedaten speichern um darauf künftig schneller zuzugreifen?")
 			   If $ask = 6 Then
 				  IniWrite($config, "settings", "saveLogin", 1)
 				  saveLogin()
@@ -111,6 +115,7 @@ While 1
 			   If $test Then
 				  $pickedServer = $serverId[0]
 				  botSay("Melde mich zum Dienst. Zur Hilfe: !help")
+				  GUICtrlSetData($CtrlConnect, "Ändern")
 				  AdlibRegister("refreshTimer", 500)
 			   EndIf
 			EndIf
@@ -172,7 +177,7 @@ Func parseCommand($username, $msg)
 	  Case "help"
 		 botSay("Anmeldung: !team [1 oder 2]")
 		 botSay("Map - Wahl: !map [mapname]")
-		 botSay("Vorbereitung: !warmup !knife !stay !switch")
+		 botSay("Vorbereitung: !warmup !knife !stay !switch !fix")
 		 botSay("Pausen: !pause [tac oder tec] !unpause")
 		 botSay("Bestaetigung: !ready !unready")
 
@@ -189,7 +194,7 @@ Func parseCommand($username, $msg)
 
 	  Case "ready"
 		 $team = getTeam($username)
-		 If $team Then
+		 If $team And StringLen($confirmReady[0]) And $confirmReady[$team] = 0 Then
 			$confirmReady[$team] = 1
 			botSay(getTeamName($team) & " ist bereit")
 
@@ -218,12 +223,13 @@ Func parseCommand($username, $msg)
 					 GUICtrlSetData($CtrlTeamATacCount, 1)
 					 GUICtrlSetData($CtrlTeamBTacCount, 1)
 			   EndSwitch
+			   $confirmReady[0] = ""
 			EndIf
 		 EndIf
 
 	  Case "unready"
 		 $team = getTeam($username)
-		 If $team Then
+		 If $team And StringLen($confirmReady[0]) And  And $confirmReady[$team] = 1 Then
 			If StringLen($activePause[0]) And $activePause[1] = $team And $confirmReady[0] = "unpause" Then
 			   botSay(getTeamName($team) & " kann das Ende der Pause nicht abbrechen")
 			Else
@@ -307,7 +313,7 @@ Func parseCommand($username, $msg)
 	  Case "stay"
 		 $team = getTeam($username)
 		 If $team Then
-			startConfirmation("switch", $team, $username & " moechte dass beide Teams die Seiten beibehalten und das Spiel beginnen")
+			startConfirmation("stay", $team, $username & " moechte dass beide Teams die Seiten beibehalten und das Spiel beginnen")
 		 EndIf
 
 	  Case "map"
@@ -319,6 +325,10 @@ Func parseCommand($username, $msg)
 			   startConfirmation("map", $team, $username & " moechte die Karte wechseln zu " & $cmds[1], $cmds[1])
 			EndIf
 		 EndIf
+
+	  Case "fix"
+		 sendRcon($oIE, "exec fix.cfg")
+		 botSay("Fix.cfg ausgefuehrt")
 
    EndSwitch
    setStatus("Fertig verarbeitet - " & $username & ": !" & $msg)
@@ -401,6 +411,9 @@ Func getPauseObj($team, $type)
 EndFunc
 
 Func startConfirmation($key, $team, $msg, $details = "")
+   If $confirmReady[0] = $key And $confirmReady[3] = $details Then
+	  Return False
+   EndIf
    $confirmReady[0] = $key
    $confirmReady[1] = 0
    $confirmReady[2] = 0
@@ -427,6 +440,9 @@ Func refreshTimer()
    EndIf
 
    checkPause()
+   If WinExists("Message from webpage") Then
+	  WinClose("Message from webpage") ; Ab und zu Fehlermeldungen seitens Signaltransmitter
+   EndIf
 
    $currentLog = getLog($oIE)
    If $currentLog <> $logCache Then
@@ -593,6 +609,7 @@ Func login($username, $password)
 	  Return False
    EndIf
 
+   $showstr = "Server wählen..."
    $tags = _IETagNameGetCollection($ie, "div")
    $i = 0
    For $tag in $tags
@@ -611,31 +628,39 @@ Func login($username, $password)
    GUICtrlSetState($CtrlPass, $GUI_DISABLE)
 
    GUICtrlSetData($CtrlServer, "")
+   GUICtrlSetData($CtrlServer, $showstr, "Server wählen...")
+   GUICtrlSetData($CtrlConnect, "Auswählen")
+   setStatus("Anmeldung erfolgreich, wähle einen Server aus...")
 
    Return $ie
 EndFunc
 
 Func loadServer($ie, $id)
+   setStatus("Übernehme Server #" & $id & "...")
    _IENavigate($ie, "https://gamepanel.signaltransmitter.de/userpanel.php?w=gs&d=sl&id=" & $id)
 
    $timeout = TimerInit()
    While TimerDiff($timeout) < 10*1000
 	  $log = getLog($oIE)
 	  If StringLen($log) Then
+		 setStatus("Server #" & $id & " erfolgreich übernommen")
 		 Return True
 	  EndIf
    WEnd
 
+   setStatus("Server #" & $id & " konnte nicht übernommen werden")
    Return False
 EndFunc
 
 Func sendRcon($ie, $cmd)
    If $isConnected = False Or $pickedServer = False Then
+	  setStatus("Du musst dich erst verbinden bevor du Befehle ausführen kannst")
 	  Return False
    EndIf
    $input = _IEGetObjById($ie, "inputCommand")
    $input.innerText = $cmd
    $oIE.document.parentwindow.execScript("submitForm();")
+   Sleep(250)
 EndFunc
 
 Func getLog($ie)
