@@ -1,4 +1,4 @@
-#include <IE.au3>
+#NoTrayIcon
 #include <INet.au3>
 #include <ButtonConstants.au3>
 #include <ComboConstants.au3>
@@ -9,161 +9,124 @@
 #include <WindowsConstants.au3>
 #include <Array.au3>
 #include <Crypt.au3>
+#include <SrcDSQLib.au3>
+#include "_gui.au3" ; GUI - Teil
 
-Global $oIE, $isConnected = False, $pickedServer = False, $logCache = "", $serverFTP = ObjCreate('Scripting.Dictionary')
-Global $lastUsedInput, $playerlist = ObjCreate('Scripting.Dictionary'), $confirmReady[4], $activePause[5], $config = @ScriptDir & "\settings.ini"
+Global $isConnected = False, $logSocket, $logPort = 7130, $pauseState = 0, $teamScores[2], $knifeRound = False
+Global $teamList = ObjCreate('Scripting.Dictionary'), $confirmReady[4], $activePause[5], $boQueue[5]
 
-#Region ### START Koda GUI section ### Form=
-$Form1 = GUICreate("Signaltransmitter / BFCup - Dashboard", 665, 408)
-$CtrlUser = GUICtrlCreateInput("Benutzername", 8, 8, 150, 21)
-$CtrlPass = GUICtrlCreateInput("Passwort", 165, 8, 158, 21)
-$CtrlServer = GUICtrlCreateCombo("Server wÃ¤hlen...", 336, 8, 185, 21, $CBS_DROPDOWNLIST)
-GUICtrlSetState(-1, $GUI_DISABLE)
-$CtrlConnect = GUICtrlCreateButton("Verbinden", 528, 8, 121, 22)
-$Group1 = GUICtrlCreateGroup("RCON", 8, 40, 313, 281)
-GUICtrlCreateGroup("", -99, -99, 1, 1)
-$CtrlRconLog = GUICtrlCreateList("", 24, 56, 281, 227, BitOR($WS_BORDER, $WS_VSCROLL))
-$CtrlRconSend = GUICtrlCreateInput("RCON Befehl...", 24, 283, 281, 21)
-$Group2 = GUICtrlCreateGroup("Chat", 336, 40, 313, 281)
-GUICtrlCreateGroup("", -99, -99, 1, 1)
-$CtrlChatLog = GUICtrlCreateList("", 348, 56, 281, 227, BitOR($WS_BORDER, $WS_VSCROLL))
-$CtrlChatSend = GUICtrlCreateInput("Nachricht an alle...", 348, 283, 281, 21)
-$CtrlSubmitButton = GUICtrlCreateButton(".", -10, -10, 1, 1, $BS_DEFPUSHBUTTON)
-$Button2 = GUICtrlCreateButton("Warmup", 8, 328, 73, 49)
-$Button3 = GUICtrlCreateButton("Knife", 88, 328, 73, 49)
-$Button4 = GUICtrlCreateButton("Switch", 168, 328, 73, 49)
-$Button5 = GUICtrlCreateButton("Start", 248, 328, 73, 49)
-$CtrlTeamA = GUICtrlCreateInput("Team A", 336, 329, 242, 21)
-$CtrlTeamB = GUICtrlCreateInput("Team B", 336, 353, 242, 21)
-$CtrlTeamATacCount = GUICtrlCreateInput("1", 585, 328, 17, 21, $ES_CENTER)
-$CtrlTeamBTacCount = GUICtrlCreateInput("1", 585, 352, 17, 21, $ES_CENTER)
-$CtrlTeamATecTimer = GUICtrlCreateInput("15:00", 608, 328, 41, 21, $ES_CENTER)
-$CtrlTeamBTecTimer = GUICtrlCreateInput("15:00", 608, 352, 41, 21, $ES_CENTER)
-$StatusBar1 = _GUICtrlStatusBar_Create($Form1)
-_GUICtrlStatusBar_SetMinHeight($StatusBar1, 17)
-GUISetState(@SW_SHOW)
-#EndRegion ### END Koda GUI section ###
-
-GUICtrlSetTip($CtrlUser, "Gib deine Signaltransmitter - Benutzerdaten ein")
-GUICtrlSetTip($CtrlPass, "Gib deine Signaltransmitter - Benutzerdaten ein")
-GUICtrlSetTip($CtrlTeamA, "DrÃ¼cke Enter um beide Namen auf dem Server zu setzen")
-GUICtrlSetTip($CtrlTeamB, "DrÃ¼cke Enter um beide Namen auf dem Server zu setzen")
-GUICtrlSetTip($CtrlTeamATacCount, "Taktische Pausen")
-GUICtrlSetTip($CtrlTeamBTacCount, "Taktische Pausen")
-GUICtrlSetTip($CtrlTeamATecTimer, "Technische Pausen")
-GUICtrlSetTip($CtrlTeamBTecTimer, "Technische Pausen")
-
-$placeholders = ObjCreate('Scripting.Dictionary')
-$placeholders.Add($CtrlRconSend, "RCON Befehl...")
-$placeholders.Add($CtrlChatSend, "Nachricht an alle...")
-$placeholders.Add($CtrlTeamA, "Team A")
-$placeholders.Add($CtrlTeamB, "Team B")
-$placeholders.Add($CtrlUser, "Benutzername")
-$placeholders.Add($CtrlPass, "Passwort")
-
-If FileExists($config) And IniRead($config,"settings", "saveLogin", 0) = 1 Then
-   $loadUser = IniRead($config, "login", "username", "Benutzername")
-   $loadPass = IniRead($config, "login", "password", "Passwort")
-   GUICtrlSetData($CtrlUser, $loadUser)
-   If $loadPass <> "Passwort" Then
-	  GUICtrlSendMsg($CtrlPass, $EM_SETPASSWORDCHAR, Asc("*"), 0)
-	  GUICtrlSetData($CtrlPass, decrypt($loadPass))
-   EndIf
-EndIf
-
-setStatus("Warten auf Verbindung...")
-GUIRegisterMsg($WM_COMMAND, "On_WM_COMMAND")
+initGui()
 
 While 1
-   $nMsg = GUIGetMsg()
+   If $isConnected Then
+	  checkPause()
 
-   Switch $nMsg
-	  Case $GUI_EVENT_CLOSE
-		 Exit
+	  $msg = cleanUDPRecv()
+	  If $msg Then
+		 ;ConsoleWrite("NewRCON: " & $msg & @crlf)
+		 $nicemsg = StringTrimLeft($msg,23)
+		 GUICtrlSetData($CtrlRconLog, $nicemsg & "|")
+		 autoScroll($CtrlRconLog)
 
-	  Case $CtrlConnect
-		 If $isConnected = False Then
-			GUICtrlSetState($CtrlConnect, $GUI_DISABLE)
-			$test = login(GUICtrlRead($CtrlUser), GUICtrlRead($CtrlPass))
-			GUICtrlSetState($CtrlConnect, $GUI_ENABLE)
-			If $test = False Then
-			   ContinueLoop
-			EndIf
-
-			If Not FileExists($config) Then
-			   $ask = MsgBox(32+4, "Login speichern", "MÃ¶chtest du deine Anmeldedaten speichern um darauf kÃ¼nftig schneller zuzugreifen?")
-			   If $ask = 6 Then
-				  IniWrite($config, "settings", "saveLogin", 1)
-				  saveLogin()
+		 If StringInStr($msg, '>" say "') Then
+			$chat = StringRegExp($msg, '"(.*?)<(\d+)><.*?><(TERRORIST|CT|Spectator|Console)>" say "(.*?)"$', $STR_REGEXPARRAYMATCH)
+			If IsArray($chat) Then
+			   If $teamList.Exists($chat[2]) Then
+				  $team = $teamList.Item($chat[2])
 			   Else
-				  IniWrite($config, "settings", "saveLogin", 0)
+				  $team = False
 			   EndIf
-			ElseIf IniRead($config, "settings", "saveLogin", 0) = 1 Then
-			   saveLogin()
+			   If StringLeft($chat[3], 1) = "!" Then
+				  If $team Then
+					 parseCommand($chat[0], $team, $chat[3])
+				  Else
+					 botSay("Team konnten noch nicht erkannt werden, bitte Spiel neu starten")
+				  EndIf
+			   EndIf
+			   Local $addchat = ""
+			   If $chat[2] <> "Console" Then
+				  $addchat = "(" & StringReplace($chat[2],"TERRORIST", "T")
+				  If $team Then $addchat &= "/T" & $team
+				  $addchat &= ") " & $chat[0] & ": "
+			   EndIf
+			   GUICtrlSetData($CtrlChatLog, $addchat & $chat[3] & "|")
+			   autoScroll($CtrlChatLog)
 			EndIf
-
-			$oIE = $test
-			$isConnected = True
-			$pickedServer = False
-		 Else
-			$selected = GUICtrlRead($CtrlServer)
-			$serverId = StringRegExp($selected, "\[(\d+)\]", $STR_REGEXPARRAYMATCH)
-			If IsArray($serverId) Then
-			   GUICtrlSetData($CtrlChatLog, "")
-			   GUICtrlSetData($CtrlRconLog, "")
-			   $test = loadServer($oIE, $serverId[0])
-			   If $test Then
-				  $pickedServer = $serverId[0]
-				  botSay("Melde mich zum Dienst. Zur Hilfe: !help")
-				  GUICtrlSetData($CtrlConnect, "Ã„ndern")
-				  AdlibRegister("refreshTimer", 500)
+		 EndIf
+		 If StringInStr($msg, ' triggered "') Then
+			$npcTrigger = StringRegExp($msg, '(\w+?) triggered "(.*?)"( on |$)', $STR_REGEXPARRAYMATCH)
+			If IsArray($npcTrigger) Then
+			   Switch $npcTrigger[1]
+				  Case "Round_Spawn"
+					 $pauseState = 1
+				  Case "Round_Start"
+					 $pauseState = 0
+				  Case "Match_Start"
+					 GUICtrlSetData($CtrlChatLog, "")
+					 GUICtrlSetData($CtrlRconLog, "")
+					 If $boQueue[0] And $boQueue[4] = 0 Then
+						$boQueue[4] = 1
+						$knifeRound = True
+						startPause("bot", 0, 5*60)
+						sendRcon("exec knife.cfg")
+					 EndIf
+				  Case "Round_End"
+					 If $teamList.Exists("CT") Then
+						If $knifeRound = False Then
+						   If $teamScores[0] > $teamScores[1] Then
+							  onScore(1)
+						   ElseIf $teamScores[1] > $teamScores[0] Then
+							  onScore(2)
+						   Else
+							  onScore(0)
+						   EndIf
+						Else
+						   sendRcon("mp_pause_match")
+						   If $teamScores[0] > $teamScores[1] Then
+							  botSay(getTeamName(1) & " darf entscheiden: !stay / !switch")
+							  $knifeRound = 1
+						   ElseIf $teamScores[1] > $teamScores[0] Then
+							  botSay(getTeamName(2) & " darf entscheiden: !stay / !switch")
+							  $knifeRound = 2
+						   Else
+							  botSay("Kein Sieger nach der Knife? Nochmal!")
+							  sendRcon("mp_unpause_match")
+						   EndIf
+						EndIf
+					 EndIf
+			   EndSwitch
+			EndIf
+		 EndIf
+		 If StringInStr($msg, "Team playing ") Then
+			$playing = StringRegExp($msg, 'Team playing "(\w+)": (.*?)$', $STR_REGEXPARRAYMATCH)
+			If IsArray($playing) Then
+			   If $playing[1] = getTeamName(1) Then
+				  setTeamList($playing[0], 1)
+				  setTeamList(sideOpposite($playing[0]), 2)
+			   ElseIf $playing[1] = getTeamName(2) Then
+				  setTeamList($playing[0], 2)
+				  setTeamList(sideOpposite($playing[0]), 1)
+			   Else
+				  ConsoleWrite("Keine Ahnung welche Seite " & $playing[1] & " spielt" & @crlf)
 			   EndIf
 			EndIf
 		 EndIf
-
-	  Case $CtrlSubmitButton
-		 Switch $lastUsedInput
-			Case $CtrlUser, $CtrlPass
-			   ControlClick("","", GUICtrlGetHandle($CtrlConnect))
-
-			Case $CtrlRconSend
-			   $cmd = GUICtrlRead($CtrlRconSend)
-			   GUICtrlSetData($CtrlRconSend, "")
-			   sendRcon($oIE, $cmd)
-			   setStatus("Befehl abgeschickt")
-
-			Case $CtrlChatSend
-			   $msg = GUICtrlRead($CtrlChatSend)
-			   GUICtrlSetData($CtrlChatSend, "")
-			   sendRcon($oIE, "say " & $msg)
-			   setStatus("Nachricht abgeschickt")
-
-			Case $CtrlTeamA, $CtrlTeamB
-			   $teamA = GUICtrlRead($CtrlTeamA)
-			   $teamB = GUICtrlRead($CtrlTeamB)
-			   sendRcon($oIE, "mp_teamname_1 " & $teamA)
-			   sendRcon($oIE, "mp_teamname_2 " & $teamB)
-			   setStatus("Team - Bezeichnungen angepasst")
-
-		 EndSwitch
-
-	  Case $Button2
-		 setStatus("Warmup gestartet")
-		 sendRcon($oIE, "exec warmup.cfg")
-	  Case $Button3
-		 setStatus("Knife - Round gestartet")
-		 sendRcon($oIE, "exec knife.cfg")
-	  Case $Button4
-		 setStatus("Teamseiten getauscht")
-		 sendRcon($oIE, "mp_swapteams 1")
-	  Case $Button5
-		 setStatus("Match gestartet")
-		 sendRcon($oIE, "exec esl5on5.cfg")
-   EndSwitch
+		 If StringInStr($msg, ' scored "') Then
+			$score = StringRegExp($msg, 'Team "(.*?)" scored "(\d+)" with ', $STR_REGEXPARRAYMATCH)
+			If IsArray($score) And $teamList.Exists($score[0]) Then
+			   $teamid = Int($teamList.Item($score[0])) - 1
+			   $teamScores[$teamid] = Int($score[1])
+			   ;ConsoleWrite("setScore T" & ($teamid+1) & ": " & $teamScores[$teamid] & @crlf)
+			EndIf
+		 EndIf
+	  EndIf
+   Else
+	  Sleep(100)
+   EndIf
 WEnd
 
-Func parseCommand($username, $msg)
-   setStatus("Verarbeite " & $username & ": " & $msg)
+Func parseCommand($username, $team, $msg)
+   setStatus("Verarbeite Befehl: " & $msg)
    $msg = StringTrimLeft(StringLower($msg), 1)
    If StringInStr($msg, " ") Then
 	  Local $cmds = StringSplit($msg, " ")
@@ -175,26 +138,10 @@ Func parseCommand($username, $msg)
 
    Switch $cmds[0]
 	  Case "help"
-		 botSay("Anmeldung: !team [1 oder 2]")
-		 botSay("Map - Wahl: !map [mapname]")
-		 botSay("Vorbereitung: !warmup !knife !stay !switch !fix")
-		 botSay("Pausen: !pause [tac oder tec] !unpause")
-		 botSay("Bestaetigung: !ready !unready")
-
-	  Case "team"
-		 If $params = 1 Or Int($cmds[1]) > 2 Or Int($cmds[1]) < 1 Then
-			botSay("Falsche Syntax, " & $username)
-			botSay(GUICtrlRead($CtrlTeamA) & " = !team 1")
-			botSay(GUICtrlRead($CtrlTeamB) & " = !team 2")
-		 Else
-			$team = Int($cmds[1])
-			$playerlist.Item($username) = $team
-			botSay($username & " ist jetzt angemeldet fuer " & getTeamName($team))
-		 EndIf
+		 botSay("!fix !match !warmup !knife !stay !switch !pause !unpause")
 
 	  Case "ready"
-		 $team = getTeam($username)
-		 If $team And StringLen($confirmReady[0]) And $confirmReady[$team] = 0 Then
+		 If StringLen($confirmReady[0]) And $confirmReady[$team] = 0 Then
 			$confirmReady[$team] = 1
 			botSay(getTeamName($team) & " ist bereit")
 
@@ -202,35 +149,47 @@ Func parseCommand($username, $msg)
 			   Switch $confirmReady[0]
 				  Case "knife"
 					 botSay("Messerrunde wird gestartet")
-					 sendRcon($oIE, "exec knife.cfg")
+					 sendRcon("exec knife.cfg")
+					 $knifeRound = True
 				  Case "warmup"
 					 botSay("Warmup wird gestartet")
-					 sendRcon($oIE, "exec warmup.cfg")
+					 sendRcon("exec warmup.cfg")
 				  Case "unpause"
-					 sendRcon($oIE, "mp_unpause_match 1")
+					 sendRcon("mp_unpause_match")
 					 botSay("Das Match geht weiter!")
-				  Case "switch"
-					 sendRcon($oIE, "mp_swapteams 1")
-					 sendRcon($oIE, "exec esl5on5.cfg")
-					 botSay("Seiten werden getauscht und das Spiel beginnt")
-				  Case "stay"
-					 sendRcon($oIE, "exec esl5on5.cfg")
-					 botSay("Seiten werden belassen und das Spiel beginnt")
 				  Case "map"
 					 botSay("Map wird zu " & $confirmReady[3] & " gewechselt")
-					 sendRcon($oIE, "map " & $confirmReady[3])
-					 sendRcon($oIE, "exec warmup.cfg")
+					 sendRcon("map " & $confirmReady[3])
+					 sendRcon("exec warmup.cfg")
 					 GUICtrlSetData($CtrlTeamATacCount, 1)
 					 GUICtrlSetData($CtrlTeamBTacCount, 1)
+				  Case "endmatch"
+					 For $i = 0 To UBound($boQueue)-1
+						$boQueue[$i] = False
+					 Next
+					 botSay("Match - Modus wurde abgebrochen")
+				  Case "match"
+					 $boQueue[0] = 1 ; Zähler
+					 $boQueue[1] = $confirmReady[3] ; Maps
+					 $boQueue[2] = 0 ; Score Team 1
+					 $boQueue[3] = 0 ; Score Team 2
+					 $boQueue[4] = 0 ; Match - State
+
+					 $maps = StringSplit($boQueue[1], "|")
+					 _ArrayDelete($maps, 0)
+					 sendRcon('mp_teammatchstat_1 "0"; mp_teammatchstat_2 "0"; mp_teammatchstat_holdtime 30')
+					 sendRcon('map ' & $maps[0] & '; mp_teammatchstat_txt "Match 1 von ' & UBound($maps) & '"')
 			   EndSwitch
 			   $confirmReady[0] = ""
 			EndIf
+		 ElseIf $boQueue[0] And $activePause[0] = "bot" Then
+			endPause()
+			startConfirmation("unpause", $team, getTeamName($team) & " möchte beginnen")
 		 EndIf
 
 	  Case "unready"
-		 $team = getTeam($username)
-		 If $team And StringLen($confirmReady[0]) And $confirmReady[$team] = 1 Then
-			If StringLen($activePause[0]) And $activePause[1] = $team And $confirmReady[0] = "unpause" Then
+		 If StringLen($confirmReady[0]) And $confirmReady[$team] = 1 Then
+			If $activePause[1] = $team And $confirmReady[0] = "unpause" Then
 			   botSay(getTeamName($team) & " kann das Ende der Pause nicht abbrechen")
 			Else
 			   $confirmReady[$team] = 0
@@ -238,16 +197,32 @@ Func parseCommand($username, $msg)
 			EndIf
 		 EndIf
 
+	  Case "stop"
+		 startConfirmation("endmatch", $team, getTeamName($team) & " möchte das Match abbrechen")
+
 	  Case "knife"
-		 $team = getTeam($username)
-		 If $team Then
-			startConfirmation("knife", $team, $username & " moechte die Messerrunde starten")
-		 EndIf
+		 startConfirmation("knife", $team, getTeamName($team) & " möchte die Messerrunde starten")
 
 	  Case "warmup"
-		 $team = getTeam($username)
-		 If $team Then
-			startConfirmation("warmup", $team, $username & " moechte das Warmup starten")
+		 startConfirmation("warmup", $team, getTeamName($team) & " möchte das Warmup starten")
+
+	  Case "match"
+		 If $params = 1 Then
+			botSay("Setze nach !match alle zu spielenden Maps")
+		 Else
+			$mapCount = $params - 1
+			$mapPool = ""
+			For $i = 1 To UBound($cmds)-1
+			   If StringLeft($cmds[$i], 3) <> "de_" Then
+				  botSay($cmds[$i] & " ist keine gültige Map")
+				  Return False
+			   EndIf
+			   $mapPool &= $cmds[$i] & "|"
+			Next
+			$mapPool = StringTrimRight($mapPool, 1)
+			$dispPool = StringReplace($mapPool, "|", ", ")
+			botSay(getTeamName($team) & " hat ein BO" & $mapCount & " vorgeschlagen")
+			startConfirmation("match", $team, $dispPool, $mapPool)
 		 EndIf
 
 	  Case "pause"
@@ -256,82 +231,155 @@ Func parseCommand($username, $msg)
 			Return False
 		 EndIf
 
-		 $team = getTeam($username)
-		 If $team Then
-			If $params = 1 Or ($cmds[1] <> "tec" And $cmds[1] <> "tac") Then
-			   botSay("Falsche Syntax, " & $username & ". Verwende !pause [tac oder tec]")
-			ElseIf $params = 2 Or $cmds[2] <> "jetzt" Then
-			   botSay("Der Pausenzaehler startet sofort beim Pausecall")
-			   botSay("Die Pause sollte also erst am Ende einer Runde gecalled werden")
-			   botSay("Rufe die Pause dann per !pause [tac oder tec] [jetzt] auf.")
-			Else
-			   $pauseObj = getPauseObj($team, $cmds[1])
-			   If $cmds[1] = "tac" Then
-				  $remaining = Int(GUICtrlRead($pauseObj))
-				  If $remaining = 0 Then
-					 botSay(getTeamName($team) & " hat keine taktischen Pausen mehr zur Verfuegung")
-				  Else
-					 GUICtrlSetData($pauseObj, $remaining - 1)
-					 botSay(getTeamName($team) & " aktiviert eine taktische Pause")
-					 startPause($cmds[1], $team, 5*60)
-				  EndIf
+		 If $params = 1 Or ($cmds[1] <> "tec" And $cmds[1] <> "tac") Then
+			botSay("Falsche Syntax. Verwende !pause [tac oder tec]")
+		 Else
+			$pauseObj = getPauseObj($team, $cmds[1])
+			If $cmds[1] = "tac" Then
+			   $remaining = Int(GUICtrlRead($pauseObj))
+			   If $remaining = 0 Then
+				  botSay(getTeamName($team) & " hat keine taktischen Pausen mehr zur Verfügung")
 			   Else
-				  $readRemaining = GUICtrlRead($pauseObj)
-				  $remaining = parseTime($readRemaining, 1)
-				  If $remaining = 0 Then
-					 botSay(getTeamName($team) & " hat keine technischen Pausen mehr zur Verfuegung")
-				  Else
-					 botSay(getTeamName($team) & " aktiviert eine technische Pause")
-					 startPause($cmds[1], $team, $remaining)
-				  EndIf
+				  GUICtrlSetData($pauseObj, $remaining - 1)
+				  botSay(getTeamName($team) & " aktiviert eine taktische Pause")
+				  startPause($cmds[1], $team, 5*60)
+			   EndIf
+			Else
+			   $readRemaining = GUICtrlRead($pauseObj)
+			   $remaining = parseTime($readRemaining, 1)
+			   If $remaining = 0 Then
+				  botSay(getTeamName($team) & " hat keine technischen Pausen mehr zur Verfügung")
+			   Else
+				  botSay(getTeamName($team) & " aktiviert eine technische Pause")
+				  startPause($cmds[1], $team, $remaining)
 			   EndIf
 			EndIf
 		 EndIf
 
 	  Case "unpause"
-		 If Not StringLen($activePause[0]) Then
-			botSay("Es gibt keine Pause welche aufgehoben werden kann")
-			Return False
-		 EndIf
-
-		 $team = getTeam($username)
-		 If $team Then
-			If $team = $activePause[1] Then
-			   endPause()
-			   startConfirmation("unpause", $team, $username & " moechte die Pause beenden")
+		 If StringLen($activePause[0]) Then
+			If $team = $activePause[1] Or $activePause[1] = 0 Then
+			   If $activePause[1] <> 0 Then endPause()
+			   startConfirmation("unpause", $team, getTeamName($team) & " möchte die Pause beenden")
 			Else
 			   botSay("Nur das Team welches die Pause aktiviert hat kann diese auch wieder beenden")
 			EndIf
 		 EndIf
 
 	  Case "switch"
-		 $team = getTeam($username)
-		 If $team Then
-			startConfirmation("switch", $team, $username & " moechte dass beide Teams die Seiten wechseln und das Spiel beginnen")
+		 If $knifeRound = $team Then
+			$knifeRound = False
+			swapTeams(True)
+			sendRcon("mp_unpause_match; exec esl5on5.cfg")
 		 EndIf
 
 	  Case "stay"
-		 $team = getTeam($username)
-		 If $team Then
-			startConfirmation("stay", $team, $username & " moechte dass beide Teams die Seiten beibehalten und das Spiel beginnen")
+		 If $knifeRound = $team Then
+			$knifeRound = False
+			sendRcon("mp_unpause_match; exec esl5on5.cfg")
 		 EndIf
 
 	  Case "map"
-		 $team = getTeam($username)
-		 If $team Then
-			If $params = 1 Then
-			   botSay("Falsche Syntax, " & $username & ". Verwende !map [mapname]")
-			Else
-			   startConfirmation("map", $team, $username & " moechte die Karte wechseln zu " & $cmds[1], $cmds[1])
-			EndIf
+		 #cs
+		 If $params = 1 Then
+			botSay("Falsche Syntax. Verwende !map [mapname]")
+		 Else
+			startConfirmation("map", $team, getTeamName($team) & " möchte die Karte wechseln zu " & $cmds[1], $cmds[1])
 		 EndIf
+		 #ce
+		 botSay("Verwende !match statt !map um direkt alle Maps zu setzen")
 
 	  Case "fix"
-		 sendRcon($oIE, "exec fix.cfg")
+		 sendRcon("exec fix.cfg")
 		 botSay("Fix.cfg ausgefuehrt")
 
+	  Case "debugcmd"
+		 If $username = "Trooper[Y]" Then
+			$doCmd = "!"
+			For $i = 2 To UBound($cmds)-1
+			   $doCmd &= $cmds[$i] & " "
+			Next
+			parseCommand($username, $cmds[1], $doCmd)
+		 EndIf
+
    EndSwitch
-   setStatus("Fertig verarbeitet - " & $username & ": !" & $msg)
+   setStatus("Fertig verarbeitet: !" & $msg)
+EndFunc
+
+Func onScore($leader)
+   $roundNum = $teamScores[0] + $teamScores[1]
+
+   If $leader > 0 Then
+	  $firstid = $leader-1
+	  If $firstid = 1 Then
+		 $scndid = 0
+	  Else
+		 $scndid = 1
+	  EndIf
+
+	  If $teamScores[$firstid] = 16 Or ($roundNum > 31 And Mod($teamScores[$firstid],5) = 1 And $teamScores[$scndid] < $teamScores[$firstid]-1) Then
+		 botSay(getTeamName($leader) & " gewinnt " & $teamScores[0] & " - " & $teamScores[1])
+
+		 If $boQueue[0] Then
+			$boQueue[0] += 1
+			$boQueue[$leader+1] += 1
+			$maps = StringSplit($boQueue[1], "|")
+			_ArrayDelete($maps, 0)
+
+			If $boQueue[0] > UBound($maps) Or $boQueue[$leader+1] > (UBound($maps)/2) Then
+			   botSay("BO" & UBound($maps) & ": Matchergebnis " & $boQueue[2] & " - " & $boQueue[3])
+			   For $i = 0 To UBound($boQueue)-1
+				  $boQueue[$i] = False
+			   Next
+			Else
+			   botSay("BO" & UBound($maps) & ": Matchstand " & $boQueue[2] & " - " & $boQueue[3])
+
+			   $boQueue[4] = 0
+			   sendRcon('mp_teammatchstat_1 "' & $boQueue[2] & '"; mp_teammatchstat_2 "' & $boQueue[3] & '";')
+			   sendRcon('map ' & $maps[$boQueue[0]-1] & '; mp_teammatchstat_txt "Match ' & $boQueue[0] & ' von ' & UBound($maps) & '"')
+			EndIf
+		 EndIf
+	  Else
+		 botSay(getTeamName($leader) & " führt " & $teamScores[0] & " - " & $teamScores[1])
+	  EndIf
+   Else
+	  If $roundnum >= 30 And Mod($roundnum, 10) = 0 Then
+		 botSay("Verlängerung bei " & $teamScores[0] & " - " & $teamScores[1])
+	  Else
+		 botSay("Gleichstand bei " & $teamScores[0] & " - " & $teamScores[1])
+	  EndIf
+   EndIf
+
+   If $roundNum = 15 Or $roundnum = 30 Or ($roundnum > 30 And Mod($roundnum, 5) = 0) Then
+	  swapTeams(False)
+   EndIf
+EndFunc
+
+Func swapTeams($realswap)
+   If $realswap Then
+	  sendRcon("mp_swapteams 3")
+   EndIf
+
+   $oldCT = $teamList.Item("CT")
+   $teamList.Item("CT") = $teamList.Item("TERRORIST")
+   $teamList.Item("TERRORIST") = $oldCT
+   ;ConsoleWrite("Swap after: CT " & $teamList.Item("CT") & " / T " & $teamList.Item("TERRORIST") & @CRLF)
+EndFunc
+
+Func sideOpposite($side)
+   If $side = "CT" Then
+	  Return "TERRORIST"
+   Else
+	  Return "CT"
+   EndIf
+EndFunc
+
+Func setTeamList($side, $id)
+   If $teamList.Exists($side) Then
+	  $teamList.Item($side) = $id
+   Else
+	  $teamList.Add($side, $id)
+   EndIf
 EndFunc
 
 Func startPause($type, $team, $time)
@@ -340,7 +388,7 @@ Func startPause($type, $team, $time)
    $activePause[2] = $time
    $activePause[3] = TimerInit()
    $activePause[4] = 0
-   sendRcon($oIE, "mp_pause_match 1")
+   sendRcon("mp_pause_match")
 EndFunc
 
 Func endPause()
@@ -349,7 +397,7 @@ Func endPause()
 	  GUICtrlSetData(getPauseObj($activePause[1], $activePause[0]), parseTime($newtime, 2))
 
 	  If $newtime > 0 Then
-		 botSay("Timer der technischen Pause gestoppt: " & parseTime($newtime, 2) & " verbleibend fuer " & getTeamName($activePause[1]))
+		 botSay(parseTime($newtime, 2) & " verbleibend für " & getTeamName($activePause[1]))
 	  EndIf
    EndIf
 
@@ -358,54 +406,25 @@ Func endPause()
 EndFunc
 
 Func checkPause()
-   If StringLen($activePause[0]) Then
+   If StringLen($activePause[0]) > 1 And $pauseState = 1 Then
 	  $newtime = $activePause[2] - Floor(TimerDiff($activePause[3])/1000)
 
 	  $restmins = $newtime/60
 	  If Mod($newtime, 60) = 0 And $activePause[4] <> $restmins And $restmins > 0 Then
 		 $activePause[4] = $restmins
-		 botSay("Die Pause von " & getTeamName($activePause[1]) & " endet in spaetestens " & ($newtime/60) & " Minuten")
+		 If $restmins = 1 Then
+			botSay("Die Pause endet in spätestens einer Minute")
+		 Else
+			botSay("Die Pause endet in spätestens " & $restmins & " Minuten")
+		 EndIf
 	  EndIf
 	  If $activePause[0] = "tec" Then
 		 GUICtrlSetData(getPauseObj($activePause[1], $activePause[0]), parseTime($newtime, 2))
 	  EndIf
 	  If $newtime <= 0 Then
-		 botSay("Die Pause von " & getTeamName($activePause[1]) & " ist ausgelaufen, es geht weiter!")
+		 botSay("Die Pause ist ausgelaufen, es geht weiter!")
 		 endPause()
-		 sendRcon($oIE, "mp_unpause_match 1")
-	  EndIf
-   EndIf
-EndFunc
-
-Func getTeam($user)
-   If $playerlist.Exists($user) And ($playerlist.Item($user) = 1 Or $playerlist.Item($user) = 2) Then
-	  Return $playerlist.Item($user)
-   Else
-	  botSay($user & ", du bist nicht angemeldet. Verwende !team [1 oder 2]")
-	  Return False
-   EndIf
-EndFunc
-
-Func getTeamName($team)
-   If $team = 1 Then
-	  Return GUICtrlRead($CtrlTeamA)
-   Else
-	  Return GUICtrlRead($CtrlTeamB)
-   EndIf
-EndFunc
-
-Func getPauseObj($team, $type)
-   If $type = "tac" Then
-	  If $team = 1 Then
-		 Return $CtrlTeamATacCount
-	  Else
-		 Return $CtrlTeamBTacCount
-	  EndIf
-   Else
-	  If $team = 1 Then
-		 Return $CtrlTeamATecTimer
-	  Else
-		 Return $CtrlTeamBTecTimer
+		 sendRcon("mp_unpause_match")
 	  EndIf
    EndIf
 EndFunc
@@ -420,7 +439,45 @@ Func startConfirmation($key, $team, $msg, $details = "")
    $confirmReady[$team] = 1
    $confirmReady[3] = $details
    botSay($msg)
-   botSay("Dieser Befehl muss vom anderen Team per !ready bestaetigt werden (Abbruch per !unready)")
+   botSay("Dieser Befehl muss vom anderen Team per !ready bestätigt werden (Abbruch per !unready)")
+EndFunc
+
+Func botSay($msg)
+   Return sendRcon("say (BreadBot) " & $msg)
+EndFunc
+
+Func syncTeamNames()
+   $teamA = GUICtrlRead($CtrlTeamA)
+   $teamB = GUICtrlRead($CtrlTeamB)
+   sendRcon("mp_teamname_1 " & $teamA & "; mp_teamname_2 " & $teamB)
+   setStatus("Team - Bezeichnungen angepasst")
+EndFunc
+
+; ######################################################
+
+Func onExit()
+   If $isConnected Then
+	  ;sendRcon('logaddress_del "' & _GetIP() & ":" & $logPort & '"')
+	  UDPCloseSocket($logSocket)
+   EndIf
+   UDPShutdown()
+EndFunc
+
+Func sendRcon($cmd)
+   If Not $isConnected Then
+	  setStatus("Du musst dich erst verbinden bevor du Befehle ausführen kannst")
+	  Return False
+   EndIf
+
+   $serverdaten = GUICtrlRead($CtrlAdr)
+   $serverparts = StringSplit($serverdaten, ":")
+   $ret = _SrcDSQ_RCon($serverparts[1], Int($serverparts[2]), GUICtrlRead($CTrlPass), $cmd)
+   #cs
+   ConsoleWrite("SendRcon: " & $cmd & @crlf & "Result: (" & @error & ") <" & $ret & ">" & @CRLF)
+   If Not StringLen($ret) Then
+	  _ArrayDisplay($rconSocket)
+   EndIf
+   #ce
 EndFunc
 
 Func parseTime($time, $way)
@@ -434,126 +491,21 @@ Func parseTime($time, $way)
    EndIf
 EndFunc
 
-Func refreshTimer()
-   If $isConnected = False Or $pickedServer = False Then
-	  Return AdlibUnRegister("refreshTimer")
-   EndIf
-
-   checkPause()
-   If WinExists("Message from webpage") Then
-	  WinClose("Message from webpage") ; Ab und zu Fehlermeldungen seitens Signaltransmitter
-   EndIf
-
-   $currentLog = getLog($oIE)
-   If $currentLog <> $logCache Then
-	  Local $isInit = False
-	  If StringLen($logCache) Then
-		 $newLog = StringReplace($currentLog, $logCache, "")
-	  Else
-		 $newLog = $currentLog
-		 $isInit = True
-	  EndIf
-
-	  $logCache = $currentLog
-	  $addEntries = StringSplit($newLog, @CRLF)
-	  For $i = 1 To $addEntries[0]
-		 $addEntries[$i] = StringStripWS($addEntries[$i], 3)
-	  Next
-	  _ArrayDelete($addEntries, 0)
-	  $addStr = StringReplace(_ArrayToString($addEntries, "|"),"||", "|")
-	  If StringLeft($addStr, 1) = "|" Then
-		 $addstr = StringTrimLeft($addStr, 1)
-	  EndIf
-	  If StringRight($addStr, 1) = "|" Then
-		 $addstr = StringTrimRight($addStr, 1)
-	  EndIf
-	  GUICtrlSetData($CtrlRconLog, $addStr & "|")
-	  autoScroll($CtrlRconLog)
-	  ;ConsoleWrite("NewRCON: " & $addStr & @crlf)
-
-	  $chatContainer = ""
-	  If Not $playerlist.Exists("Console") Then $playerlist.Add("Console", 0)
-
-	  For $i = 0 To UBound($addEntries)-1
-		 $row = $addEntries[$i]
-		 $joined = StringRegExp($row, 'Client "(.*?)" connected', $STR_REGEXPARRAYMATCH)
-		 $chat = StringRegExp($row, '(.+?): (.+)', $STR_REGEXPARRAYMATCH)
-		 $teamname = StringRegExp($row, 'mp_teamname_(\d) (.+)', $STR_REGEXPARRAYMATCH)
-		 ; todo: umbenennen
-
-		 If IsArray($joined) Then
-			$joined = StringStripWS($joined[0],3)
-			If Not $playerlist.Exists($joined) Then $playerlist.Add($joined, 3)
-		 ElseIf IsArray($chat) Then
-			$chat[0] = StringStripWS($chat[0],3)
-			$chat[1] = StringStripWS($chat[1],3)
-			If $playerlist.Exists($chat[0]) Then
-			   If StringLeft($chat[1], 1) = "!" And Not $isInit Then
-				  parseCommand($chat[0], $chat[1])
-			   EndIf
-			   Switch $playerlist.Item($chat[0])
-				  Case 0
-					 $prefix = "C"
-				  Case 1
-					 $prefix = "A"
-				  Case 2
-					 $prefix = "B"
-				  Case 3
-					 $prefix = "?"
-			   EndSwitch
-			   $chatContainer = $chatContainer & "| (" & $prefix & ") " & $chat[0] & ": " & $chat[1]
-			EndIf
-		 ElseIf IsArray($teamname) Then
-			$tid = Int($teamname[0])
-			$name = StringStripWS($teamname[1], 3)
-
-			If $tid = 1 Then
-			   GUICtrlSetData($CtrlTeamA, $name)
-			Else
-			   GUICtrlSetData($CtrlTeamB, $name)
-			EndIf
-		 EndIf
-	  Next
-	  If StringLen($chatContainer) Then
-		 GUICtrlSetData($CtrlChatLog, StringTrimLeft($chatContainer,1))
-		 autoScroll($CtrlChatLog)
+Func cleanUDPRecv()
+   Local $cache = False
+   $cache = UDPRecv($logSocket, 2048, 1)
+   If $cache Then
+	  $cache = StringTrimLeft($cache, 2)
+	  $cache = __ReadHexStr($cache)
+	  $cache = StringTrimLeft($cache, 6)
+	  $cache = StringStripCR(StringStripWS($cache,3))
+	  $cache = StringRegExpReplace($cache, '[^\w<> \-:äöüÄÖÜ"\.\!\#\/\\\(\)\?\,\[\]]', '')
+	  If StringLen($cache) > 2 And Not StringInStr($cache, "SIGNALTRANSMITTER.de", 1) Then
+		 Return $cache
 	  EndIf
    EndIf
+   Return False
 EndFunc
-
-Func botSay($msg)
-   Return sendRcon($oIE, "say (BreadBot) " & $msg)
-EndFunc
-
-Func On_WM_COMMAND($hWnd, $Msg, $wParam, $lParam)
-   $nNotifyCode = BitShift($wParam, 16)
-   $nID = BitAnd($wParam, 0x0000FFFF)
-   Switch $nNotifyCode
-      Case $EN_UPDATE
-		 $lastUsedInput = $nID
-
-	  Case $EN_SETFOCUS
-		 $lastUsedInput = $nID
-		 If $placeholders.Exists($nID) And GUICtrlRead($nID) = $placeholders.Item($nID) Then
-			GUICtrlSetData($nID, "")
-
-			If $nID = $CtrlPass Then
-			   GUICtrlSendMsg($CtrlPass, $EM_SETPASSWORDCHAR, Asc("*"), 0)
-			   GUICtrlSetState($CtrlPass, $GUI_FOCUS)
-			EndIf
-		 EndIf
-
-	  Case $EN_KILLFOCUS
-		 $lastUsedInput = $nID
-		 If $placeholders.Exists($nID) And GUICtrlRead($nID) = "" Then
-			GUICtrlSetData($nID, $placeholders.Item($nID))
-
-			If $nID = $CtrlPass Then
-			   GUICtrlSendMsg($CtrlPass, $EM_SETPASSWORDCHAR, 0, 0)
-			EndIf
-		 EndIf
-    EndSwitch
- EndFunc
 
 Func getCryptKey()
    Return @UserName & "/" & @ComputerName & "&" & DriveGetSerial(@HomeDrive)
@@ -574,111 +526,5 @@ Func decrypt($str)
    $enc = _Crypt_DecryptData($str, $key, $CALG_USERKEY)
    _Crypt_DestroyKey($key)
 
-   Return $enc
-EndFunc
-
-Func savelogin()
-   IniWrite($config, "login", "username", GUICtrlRead($CtrlUser))
-   IniWrite($config, "login", "password", encrypt(GUICtrlRead($CtrlPass)))
-EndFunc
-
-; ######################################################
-
-Func onExit()
-   _IEQuit($oIE)
-EndFunc
-
-Func autoScroll($list)
-   _GUICtrlListBox_SetTopIndex($list, _GUICtrlListBox_GetListBoxInfo($list) - 1)
-EndFunc
-
-Func login($username, $password)
-   setStatus("Anmeldung bei Signaltransmitter...")
-
-   OnAutoItExitRegister("onExit")
-   $ie = _IECreate("https://gamepanel.signaltransmitter.de/", 0, 0, 1)
-
-   $loginForm = _IEFormGetCollection($ie, 0)
-   _IEFormElementSetValue(_IEFormElementGetCollection($loginForm, 0), $username)
-   _IEFormElementSetValue(_IEFormElementGetCollection($loginForm, 1), $password)
-   _IEFormSubmit($loginForm)
-
-   _IENavigate($ie, "https://gamepanel.signaltransmitter.de/userpanel.php?w=gs")
-   If _IEPropertyGet($ie,"locationurl") <> "https://gamepanel.signaltransmitter.de/userpanel.php?w=gs" Then
-	  setStatus("Anmeldung fehlgeschlagen")
-	  Return False
-   EndIf
-
-   $showstr = "Server wÃ¤hlen..."
-   $tags = _IETagNameGetCollection($ie, "div")
-   $i = 0
-   For $tag in $tags
-	  If StringInStr($tag.className, "box-success") Then
-		 $title = StringRegExp($tag.innerHTML, '>\d+\.\d+\.\d+\.\d+:\d+ (.*?)<', $STR_REGEXPARRAYMATCH)
-		 $id = StringRegExp($tag.innerHTML, 'id=(\d+)"', $STR_REGEXPARRAYMATCH)
-		 $showstr = $showstr & "|[" & $id[0] & "] " & $title[0]
-
-		 $ftp = StringRegExp($tag.innerHTML, '<a href="(ftp:\/\/.*?)">', $STR_REGEXPARRAYMATCH)
-		 $serverFTP.Add($id[0], $ftp[0])
-	  EndIf
-   Next
-
-   GUICtrlSetState($CtrlServer, $GUI_ENABLE)
-   GUICtrlSetState($CtrlUser, $GUI_DISABLE)
-   GUICtrlSetState($CtrlPass, $GUI_DISABLE)
-
-   GUICtrlSetData($CtrlServer, "")
-   GUICtrlSetData($CtrlServer, $showstr, "Server wÃ¤hlen...")
-   GUICtrlSetData($CtrlConnect, "AuswÃ¤hlen")
-   setStatus("Anmeldung erfolgreich, wÃ¤hle einen Server aus...")
-
-   Return $ie
-EndFunc
-
-Func loadServer($ie, $id)
-   setStatus("Ãœbernehme Server #" & $id & "...")
-   _IENavigate($ie, "https://gamepanel.signaltransmitter.de/userpanel.php?w=gs&d=sl&id=" & $id)
-
-   $timeout = TimerInit()
-   While TimerDiff($timeout) < 10*1000
-	  $log = getLog($oIE)
-	  If StringLen($log) Then
-		 setStatus("Server #" & $id & " erfolgreich Ã¼bernommen")
-		 Return True
-	  EndIf
-   WEnd
-
-   setStatus("Server #" & $id & " konnte nicht Ã¼bernommen werden")
-   Return False
-EndFunc
-
-Func sendRcon($ie, $cmd)
-   If $isConnected = False Or $pickedServer = False Then
-	  setStatus("Du musst dich erst verbinden bevor du Befehle ausfÃ¼hren kannst")
-	  Return False
-   EndIf
-   $input = _IEGetObjById($ie, "inputCommand")
-   $input.innerText = $cmd
-   $oIE.document.parentwindow.execScript("submitForm();")
-
-   $timeout = TimerInit()
-   While TimerDiff($timeout) < 3*1000
-	  If Not StringLen($input.innerText) Then
-		 ExitLoop
-	  EndIf
-   WEnd
-
-EndFunc
-
-Func getLog($ie)
-   $log = _IEGetObjById($ie, "boxBody")
-   $oIE.document.parentwindow.execScript("getLog();")
-   Return $log.innerText
-
-   ;$log = _INetGetSource($serverFTP.Item($pickedServer) & "/screenlog.0")
-   ;Return $log
-EndFunc
-
-Func setStatus($text)
-   _GUICtrlStatusBar_SetText($StatusBar1, $text)
+   Return BinaryToString($enc)
 EndFunc
