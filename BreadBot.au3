@@ -62,6 +62,8 @@ While 1
 				  Case "Round_Start"
 					 $pauseState = 0
 				  Case "Match_Start"
+					 GUICtrlSetData($CtrlTeamATacCount, 1)
+					 GUICtrlSetData($CtrlTeamBTacCount, 1)
 					 GUICtrlSetData($CtrlChatLog, "")
 					 GUICtrlSetData($CtrlRconLog, "")
 					 If $boQueue[0] And $boQueue[4] = 0 Then
@@ -160,9 +162,6 @@ Func parseCommand($username, $team, $msg)
 				  Case "map"
 					 botSay("Map wird zu " & $confirmReady[3] & " gewechselt")
 					 sendRcon("map " & $confirmReady[3])
-					 sendRcon("exec warmup.cfg")
-					 GUICtrlSetData($CtrlTeamATacCount, 1)
-					 GUICtrlSetData($CtrlTeamBTacCount, 1)
 				  Case "endmatch"
 					 For $i = 0 To UBound($boQueue)-1
 						$boQueue[$i] = False
@@ -178,7 +177,7 @@ Func parseCommand($username, $team, $msg)
 					 $maps = StringSplit($boQueue[1], "|")
 					 _ArrayDelete($maps, 0)
 					 sendRcon('mp_teammatchstat_1 "0"; mp_teammatchstat_2 "0"; mp_teammatchstat_holdtime 30')
-					 sendRcon('map ' & $maps[0] & '; mp_teammatchstat_txt "Match 1 von ' & UBound($maps) & '"')
+					 sendRcon('mp_teammatchstat_txt "Match 1 von ' & UBound($maps) & '"; map ' & $maps[0])
 			   EndSwitch
 			   $confirmReady[0] = ""
 			EndIf
@@ -336,7 +335,7 @@ Func onScore($leader)
 
 			   $boQueue[4] = 0
 			   sendRcon('mp_teammatchstat_1 "' & $boQueue[2] & '"; mp_teammatchstat_2 "' & $boQueue[3] & '";')
-			   sendRcon('map ' & $maps[$boQueue[0]-1] & '; mp_teammatchstat_txt "Match ' & $boQueue[0] & ' von ' & UBound($maps) & '"')
+			   sendRcon('mp_teammatchstat_txt "Match ' & $boQueue[0] & ' von ' & UBound($maps) & '"; map ' & $maps[0])
 			EndIf
 		 EndIf
 	  Else
@@ -413,9 +412,17 @@ Func checkPause()
 	  If Mod($newtime, 60) = 0 And $activePause[4] <> $restmins And $restmins > 0 Then
 		 $activePause[4] = $restmins
 		 If $restmins = 1 Then
-			botSay("Die Pause endet in spätestens einer Minute")
+			If $activePause[0] = "bot" Then
+			   botSay("Die Runde startet in spätestens einer Minute (!ready)")
+			Else
+			   botSay("Die Pause endet in spätestens einer Minute")
+			EndIf
 		 Else
-			botSay("Die Pause endet in spätestens " & $restmins & " Minuten")
+			If $activePause[0] = "bot" Then
+			   botSay("Die Runde startet in spätestens " & $restmins & " Minuten (!ready)")
+			Else
+			   botSay("Die Pause endet in spätestens " & $restmins & " Minuten")
+			EndIf
 		 EndIf
 	  EndIf
 	  If $activePause[0] = "tec" Then
