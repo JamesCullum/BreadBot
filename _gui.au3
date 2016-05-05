@@ -90,8 +90,11 @@ Func guiConnect()
 
 	  $logSocket = UDPBind(@IPAddress1, $logPort)
 	  If @error Then
-		 $isConnected = False
 		 setStatus("Port konnte nicht geöffnet werden: " & @error)
+		 $isConnected = False
+		 GUICtrlSetState($CtrlAdr, $GUI_ENABLE)
+		 GUICtrlSetState($CtrlPass, $GUI_ENABLE)
+		 GUICtrlSetData($CtrlConnect, "Verbinden")
 		 GUICtrlSetState($CtrlConnect, $GUI_ENABLE)
 		 Return False
 	  EndIf
@@ -100,6 +103,9 @@ Func guiConnect()
 	  If @error Then
 		 $isConnected = False
 		 setStatus("RCON - Verbindung konnte nicht hergestellt werden: " & @error)
+		 GUICtrlSetState($CtrlAdr, $GUI_ENABLE)
+		 GUICtrlSetState($CtrlPass, $GUI_ENABLE)
+		 GUICtrlSetData($CtrlConnect, "Verbinden")
 		 GUICtrlSetState($CtrlConnect, $GUI_ENABLE)
 		 Return False
 	  EndIf
@@ -123,7 +129,7 @@ Func guiConnect()
 	  GUICtrlSetData($CtrlConnect, "Trennen")
 
 	  syncTeamNames()
-	  $initTeams = InputBox("Teams initialisieren", "Gib die entsprechende Zahl ein" & @crlf & "1) " & getTeamName(1) & " ist CT, " & getTeamName(1) & " ist T" & @crlf & "2) " & getTeamName(1) & " ist T, " & getTeamName(1) & " ist CT" & @crlf & "3) Nichts setzen")
+	  $initTeams = InputBox("Teams initialisieren", "Gib die entsprechende Zahl ein" & @crlf & "1) " & getTeamName(1) & " ist CT, " & getTeamName(2) & " ist T" & @crlf & "2) " & getTeamName(1) & " ist T, " & getTeamName(2) & " ist CT" & @crlf & "3) Nichts setzen")
 	  If $initTeams = "1" Then
 		 setTeamList("CT", 1)
 		 setTeamList("TERRORIST", 2)

@@ -316,7 +316,7 @@ Func onScore($leader)
 		 $scndid = 1
 	  EndIf
 
-	  If $teamScores[$firstid] = 16 Or ($roundNum > 31 And Mod($teamScores[$firstid],5) = 1 And $teamScores[$scndid] < $teamScores[$firstid]-1) Then
+	  If ($teamScores[$firstid] = 16 And $teamScores[$scndid] < 15) Or ($roundNum > 31 And Mod($teamScores[$firstid],5) = 1 And $teamScores[$scndid] < $teamScores[$firstid]-1) Then
 		 botSay(getTeamName($leader) & " gewinnt " & $teamScores[0] & " - " & $teamScores[1])
 
 		 If $boQueue[0] Then
@@ -335,7 +335,7 @@ Func onScore($leader)
 
 			   $boQueue[4] = 0
 			   sendRcon('mp_teammatchstat_1 "' & $boQueue[2] & '"; mp_teammatchstat_2 "' & $boQueue[3] & '";')
-			   sendRcon('mp_teammatchstat_txt "Match ' & $boQueue[0] & ' von ' & UBound($maps) & '"; map ' & $maps[0])
+			   sendRcon('mp_teammatchstat_txt "Match ' & $boQueue[0] & ' von ' & UBound($maps) & '"; map ' & $maps[$boQueue[0]-1])
 			EndIf
 		 EndIf
 	  Else
@@ -349,7 +349,7 @@ Func onScore($leader)
 	  EndIf
    EndIf
 
-   If $roundNum = 15 Or $roundnum = 30 Or ($roundnum > 30 And Mod($roundnum, 5) = 0) Then
+   If $roundNum = 15 Or ($roundnum > 31 And Mod($roundnum, 5) = 0 And Mod($roundnum,10) <> 0) Then
 	  swapTeams(False)
    EndIf
 EndFunc
