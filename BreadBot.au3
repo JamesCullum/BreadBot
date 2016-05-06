@@ -140,7 +140,7 @@ Func parseCommand($username, $team, $msg)
 
    Switch $cmds[0]
 	  Case "help"
-		 botSay("!fix !match !warmup !knife !stay !switch !pause !unpause")
+		 botSay("!fix !warmup !match !stop !pause !unpause")
 
 	  Case "ready"
 		 If StringLen($confirmReady[0]) And $confirmReady[$team] = 0 Then
@@ -166,7 +166,7 @@ Func parseCommand($username, $team, $msg)
 					 For $i = 0 To UBound($boQueue)-1
 						$boQueue[$i] = False
 					 Next
-					 botSay("Match - Modus wurde abgebrochen")
+					 botSay("Match wurde abgebrochen")
 				  Case "match"
 					 $boQueue[0] = 1 ; Zähler
 					 $boQueue[1] = $confirmReady[3] ; Maps
@@ -197,13 +197,21 @@ Func parseCommand($username, $team, $msg)
 		 EndIf
 
 	  Case "stop"
-		 startConfirmation("endmatch", $team, getTeamName($team) & " möchte das Match abbrechen")
+		 If $boQueue[0] Then
+			startConfirmation("endmatch", $team, getTeamName($team) & " möchte das Match abbrechen")
+		 Else
+			botSay("Du kannst !stop nur verwenden um ein aktives Match abzubrechen")
+		 EndIf
 
 	  Case "knife"
-		 startConfirmation("knife", $team, getTeamName($team) & " möchte die Messerrunde starten")
+		 ;startConfirmation("knife", $team, getTeamName($team) & " möchte die Messerrunde starten")
 
 	  Case "warmup"
-		 startConfirmation("warmup", $team, getTeamName($team) & " möchte das Warmup starten")
+		 If $boQueue[0] > 0 Then
+			botSay("Das Warmup kann nur außerhalb eines Matches gestartet werden")
+		 Else
+			startConfirmation("warmup", $team, getTeamName($team) & " möchte das Warmup starten")
+		 EndIf
 
 	  Case "match"
 		 If $params = 1 Then
@@ -212,8 +220,8 @@ Func parseCommand($username, $team, $msg)
 			$mapCount = $params - 1
 			$mapPool = ""
 			For $i = 1 To UBound($cmds)-1
-			   If StringLeft($cmds[$i], 3) <> "de_" Then
-				  botSay($cmds[$i] & " ist keine gültige Map")
+			   If StringLeft($cmds[$i], 3) <> "de_" Or StringRegExp($cmds[$i], "[^\w]") Then
+				  botSay($cmds[$i] & " hat kein gültiges Format (bspw !match de_dust2 de_cbble de_mirage)")
 				  Return False
 			   EndIf
 			   $mapPool &= $cmds[$i] & "|"
@@ -268,14 +276,16 @@ Func parseCommand($username, $team, $msg)
 	  Case "switch"
 		 If $knifeRound = $team Then
 			$knifeRound = False
+			endPause()
 			swapTeams(True)
-			sendRcon("mp_unpause_match; exec esl5on5.cfg")
+			sendRcon("exec esl5on5.cfg")
 		 EndIf
 
 	  Case "stay"
 		 If $knifeRound = $team Then
 			$knifeRound = False
-			sendRcon("mp_unpause_match; exec esl5on5.cfg")
+			endPause()
+			sendRcon("exec esl5on5.cfg")
 		 EndIf
 
 	  Case "map"
