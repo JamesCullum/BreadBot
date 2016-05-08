@@ -150,34 +150,34 @@ Func parseCommand($username, $team, $msg)
 			If $confirmReady[1] = 1 And $confirmReady[2] = 1 Then
 			   Switch $confirmReady[0]
 				  Case "knife"
-					 botSay("Messerrunde wird gestartet")
-					 sendRcon("exec knife.cfg")
-					 $knifeRound = True
+					botSay("Messerrunde wird gestartet")
+					sendRcon("exec knife.cfg")
+					$knifeRound = True
 				  Case "warmup"
-					 botSay("Warmup wird gestartet")
-					 sendRcon("exec warmup.cfg")
+					botSay("Warmup wird gestartet")
+					sendRcon("exec warmup.cfg")
 				  Case "unpause"
-					 sendRcon("mp_unpause_match")
-					 botSay("Das Match geht weiter!")
+					sendRcon("mp_unpause_match")
+					botSay("Das Match geht weiter!")
 				  Case "map"
-					 botSay("Map wird zu " & $confirmReady[3] & " gewechselt")
-					 sendRcon("map " & $confirmReady[3])
+					botSay("Map wird zu " & $confirmReady[3] & " gewechselt")
+					sendRcon("map " & $confirmReady[3])
 				  Case "endmatch"
-					 For $i = 0 To UBound($boQueue)-1
+					For $i = 0 To UBound($boQueue)-1
 						$boQueue[$i] = False
-					 Next
-					 botSay("Match wurde abgebrochen")
+					Next
+					botSay("Match wurde abgebrochen")
 				  Case "match"
-					 $boQueue[0] = 1 ; Zähler
-					 $boQueue[1] = $confirmReady[3] ; Maps
-					 $boQueue[2] = 0 ; Score Team 1
-					 $boQueue[3] = 0 ; Score Team 2
-					 $boQueue[4] = 0 ; Match - State
+					$boQueue[0] = 1 ; Zähler
+					$boQueue[1] = $confirmReady[3] ; Maps
+					$boQueue[2] = 0 ; Score Team 1
+					$boQueue[3] = 0 ; Score Team 2
+					$boQueue[4] = 0 ; Match - State
 
-					 $maps = StringSplit($boQueue[1], "|")
-					 _ArrayDelete($maps, 0)
-					 sendRcon('mp_teammatchstat_1 "0"; mp_teammatchstat_2 "0"; mp_teammatchstat_holdtime 30')
-					 sendRcon('mp_teammatchstat_txt "Match 1 von ' & UBound($maps) & '"; map ' & $maps[0])
+					$maps = StringSplit($boQueue[1], "|")
+					_ArrayDelete($maps, 0)
+					sendRcon('mp_teammatchstat_1 "0"; mp_teammatchstat_2 "0"; mp_teammatchstat_holdtime 30')
+					sendRcon('mp_teammatchstat_txt "Match 1 von ' & UBound($maps) & '"; map ' & $maps[0])
 			   EndSwitch
 			   $confirmReady[0] = ""
 			EndIf
@@ -278,14 +278,14 @@ Func parseCommand($username, $team, $msg)
 			$knifeRound = False
 			endPause()
 			swapTeams(True)
-			sendRcon("exec esl5on5.cfg")
+			sendRcon("mp_unpause_match; exec esl5on5.cfg")
 		 EndIf
 
 	  Case "stay"
 		 If $knifeRound = $team Then
 			$knifeRound = False
 			endPause()
-			sendRcon("exec esl5on5.cfg")
+			sendRcon("mp_unpause_match; exec esl5on5.cfg")
 		 EndIf
 
 	  Case "map"
